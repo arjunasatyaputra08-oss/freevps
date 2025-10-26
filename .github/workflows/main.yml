@@ -27,7 +27,25 @@ jobs:
 
           # === Write service account credential from secret ===
           $json = '${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}'
-          $json | Out-File -FilePath $credPath -Encoding utf8
+          
+          # Convert escaped newlines to actual newlines
+          # GitHub secrets store JSON with escaped \n that need to be converted
+          $json = $json.Replace('\n', "`n")
+          
+          # Write to file
+          Set-Content -Path $credPath -Value $json -Encoding UTF8
+          
+          # Verify the JSON is valid
+          try {
+              $testJson = Get-Content $credPath -Raw | ConvertFrom-Json
+              Write-Host "✅ Service account credentials saved and validated successfully"
+              Write-Host "   Client Email: $($testJson.client_email)"
+              Write-Host "   Project ID: $($testJson.project_id)"
+          } catch {
+              Write-Host "❌ Error: Invalid JSON format in service account credentials"
+              Write-Host "Error details: $_"
+              exit 1
+          }
 
           # === Prepare local dir ===
           New-Item -ItemType Directory -Path $localDir -Force | Out-Null
@@ -185,7 +203,10 @@ jobs:
 
           # === Write creds again ===
           $json = '${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}'
-          $json | Out-File -FilePath $credPath -Encoding utf8
+          # Convert escaped newlines to actual newlines
+          $json = $json.Replace('\n', "`n")
+          # Write to file
+          Set-Content -Path $credPath -Value $json -Encoding UTF8
 
           # === Create rclone config ===
           $confContent = @"
