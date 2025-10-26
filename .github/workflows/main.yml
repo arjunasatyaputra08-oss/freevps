@@ -12,25 +12,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # === RESTORE STATE FROM ARTIFACT ===
+      # === RESTORE STATE FROM REPOSITORY ===
       - name: Prepare Tailscale directory
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "C:\ProgramData\Tailscale" -Force | Out-Null
           Write-Host "Tailscale directory prepared"
       
-      - name: Download Tailscale state from artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tailscale-state
-          path: C:\ProgramData\Tailscale
-        continue-on-error: true
-        
-      - name: Check if state restored
+      - name: Restore Tailscale state from repository
         shell: pwsh
         run: |
-          if (Test-Path "C:\ProgramData\Tailscale\server-state.conf") {
-              Write-Host "✅ Tailscale state restored successfully"
+          if (Test-Path ".github\state\server-state.conf") {
+              Copy-Item ".github\state\server-state.conf" -Destination "C:\ProgramData\Tailscale\server-state.conf"
+              Write-Host "✅ Tailscale state restored from repository"
           } else {
               Write-Host "⚠️ No previous state found (this is normal for first run)"
           }
@@ -212,15 +206,41 @@ jobs:
               Start-Sleep -Seconds 300
           }
 
-      # === SAVE STATE TO ARTIFACT ===
-      - name: Upload Tailscale state as artifact
+      # === SAVE STATE TO REPOSITORY ===
+      - name: Save Tailscale state to repository
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tailscale-state
-          path: C:\ProgramData\Tailscale\server-state.conf
-          retention-days: 90
-          if-no-files-found: ignore
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\ProgramData\Tailscale\server-state.conf") {
+              # Prepare state directory
+              New-Item -ItemType Directory -Path ".github\state" -Force | Out-Null
+              
+              # Copy state file
+              Copy-Item "C:\ProgramData\Tailscale\server-state.conf" -Destination ".github\state\server-state.conf" -Force
+              
+              Write-Host "✅ State file copied to repository"
+          } else {
+              Write-Host "⚠️ No state file to save"
+          }
+      
+      - name: Commit and push state
+        if: always()
+        shell: pwsh
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          git add .github/state/
+          
+          # Check if there are changes to commit
+          $status = git status --porcelain .github/state/
+          if ($status) {
+              git commit -m "Save Tailscale state [skip ci]"
+              git push
+              Write-Host "✅ State committed to repository"
+          } else {
+              Write-Host "ℹ️ No changes to commit"
+          }
 
       # === SAVE STATE === (DISABLED - Service Account tidak punya storage quota)
       - name: Save Tailscale state to Google Drive (DISABLED)
