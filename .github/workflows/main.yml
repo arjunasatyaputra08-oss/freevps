@@ -18,6 +18,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           persist-credentials: true
+          fetch-depth: 0  # Fetch all history to get previous state
 
       # === RESTORE STATE FROM REPOSITORY ===
       - name: Prepare Tailscale directory
@@ -236,6 +237,9 @@ jobs:
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
+          
+          # Pull latest changes first to avoid conflicts
+          git pull origin main --no-edit || true
           
           git add .github/state/
           
