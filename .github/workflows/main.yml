@@ -12,8 +12,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # === RESTORE STATE ===
-      - name: Restore Tailscale state from Google Drive
+      # === RESTORE STATE FROM ARTIFACT ===
+      - name: Download Tailscale state from artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tailscale-state
+          path: C:\ProgramData\Tailscale
+          if-no-files-found: ignore
+
+      # === RESTORE STATE === (DISABLED - Google Drive)
+      # Note: Google Drive tidak bisa digunakan karena Service Account tidak punya storage quota
+      - name: Restore Tailscale state (DISABLED - Google Drive)
+        if: false
         shell: pwsh
         run: |
           Write-Host "=== Restoring Tailscale state from Google Drive ==="
@@ -187,9 +197,19 @@ jobs:
               Start-Sleep -Seconds 300
           }
 
-      # === SAVE STATE ===
-      - name: Save Tailscale state to Google Drive
+      # === SAVE STATE TO ARTIFACT ===
+      - name: Upload Tailscale state as artifact
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tailscale-state
+          path: C:\ProgramData\Tailscale\server-state.conf
+          retention-days: 90
+          if-no-files-found: ignore
+
+      # === SAVE STATE === (DISABLED - Service Account tidak punya storage quota)
+      - name: Save Tailscale state to Google Drive (DISABLED)
+        if: false
         shell: pwsh
         run: |
           Write-Host "=== Uploading Tailscale state to Google Drive ==="
