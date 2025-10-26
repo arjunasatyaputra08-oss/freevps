@@ -13,12 +13,27 @@ jobs:
         uses: actions/checkout@v4
 
       # === RESTORE STATE FROM ARTIFACT ===
+      - name: Prepare Tailscale directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "C:\ProgramData\Tailscale" -Force | Out-Null
+          Write-Host "Tailscale directory prepared"
+      
       - name: Download Tailscale state from artifact
         uses: actions/download-artifact@v4
         with:
           name: tailscale-state
           path: C:\ProgramData\Tailscale
-          if-no-files-found: ignore
+        continue-on-error: true
+        
+      - name: Check if state restored
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\ProgramData\Tailscale\server-state.conf") {
+              Write-Host "✅ Tailscale state restored successfully"
+          } else {
+              Write-Host "⚠️ No previous state found (this is normal for first run)"
+          }
 
       # === RESTORE STATE === (DISABLED - Google Drive)
       # Note: Google Drive tidak bisa digunakan karena Service Account tidak punya storage quota
