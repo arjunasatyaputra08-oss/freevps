@@ -3,6 +3,10 @@ name: RDP_TIPSUNIX with State Persistence
 on:
   workflow_dispatch:
 
+# Grant write permissions to workflow
+permissions:
+  contents: write
+
 jobs:
   secure-rdp:
     runs-on: windows-latest
@@ -11,6 +15,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
 
       # === RESTORE STATE FROM REPOSITORY ===
       - name: Prepare Tailscale directory
