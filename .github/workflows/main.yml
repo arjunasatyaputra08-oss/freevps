@@ -29,7 +29,7 @@ jobs:
         run: |
           $desktop = "C:\Users\runneradmin\Desktop"
           cd $desktop
-          gdown --folder https://drive.google.com/drive/folders/1Ozt6j1O2kPVBwnr9S0si7nDLt2rua4jK
+          gdown --folder https://drive.google.com/drive/folders/1LCHyrdi91wQUGBGvgu1YPdDSLM4OPXEO
 
       - name: Extract FL Studio ZIP
         shell: pwsh
