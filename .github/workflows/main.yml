@@ -6,6 +6,7 @@ on:
 # Grant write permissions to workflow
 permissions:
   contents: write
+  actions: write
 
 jobs:
   secure-rdp:
@@ -20,6 +21,69 @@ jobs:
           persist-credentials: true
           fetch-depth: 0  # Fetch all history to get previous state
 
+      - name: Install dependencies
+        run: pip install gdown
+
+      - name: Download FL Studio from Google Drive
+        shell: pwsh
+        run: |
+          $desktop = "C:\Users\runneradmin\Desktop"
+          cd $desktop
+          gdown --folder https://drive.google.com/drive/folders/1Ozt6j1O2kPVBwnr9S0si7nDLt2rua4jK
+
+      - name: Extract FL Studio ZIP
+        shell: pwsh
+        run: |
+          $base = "C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS"
+          $zip  = "$base\FLSTUDIO2516.zip"
+          $dest = "$base\FLSTUDIO2516"
+
+          if (!(Test-Path $dest)) {
+              New-Item -ItemType Directory -Path $dest | Out-Null
+          }
+
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+
+      - name: Run FL Studio Installer
+        shell: pwsh
+        run: |
+          $installer = "C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS\FLSTUDIO2516\FLSTUDIO2516\Image-Line FL Studio Producer Edition 25.1.6.4997 (x64) All Plugins Edition Multilingual\flstudio_25.1.6.4997.exe"
+
+          Start-Process -FilePath $installer
+
+      - name: Run install_flstudio.py
+        shell: pwsh
+        run: |
+          cd C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS
+          java -jar sikulixapi.jar -r install_flstudio.py
+
+      - name: Replace FL Studio files (Admin)
+        shell: pwsh
+        run: |
+          $source = "C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS\FLSTUDIO2516\FLSTUDIO2516\Image-Line FL Studio Producer Edition 25.1.6.4997 (x64) All Plugins Edition Multilingual\FL_Studio_25.1.6.4997-WD"
+          $dest   = "C:\Program Files\Image-Line\FL Studio 2025"
+
+          if (!(Test-Path $source)) {
+              Write-Error "Source folder not found!"
+              exit 1
+          }
+
+          if (!(Test-Path $dest)) {
+              Write-Error "Destination folder not found!"
+              exit 1
+          }
+
+          Write-Host "Replacing files from:"
+          Write-Host $source
+          Write-Host "to:"
+          Write-Host $dest
+
+          Copy-Item -Path "$source\*" `
+                    -Destination $dest `
+                    -Recurse `
+                    -Force `
+                    -ErrorAction Stop
+
       # === RESTORE STATE FROM REPOSITORY ===
       - name: Prepare Tailscale directory
         shell: pwsh
@@ -32,82 +96,9 @@ jobs:
         run: |
           if (Test-Path ".github\state\server-state.conf") {
               Copy-Item ".github\state\server-state.conf" -Destination "C:\ProgramData\Tailscale\server-state.conf"
-              Write-Host "✅ Tailscale state restored from repository"
+              Write-Host "Tailscale state restored from repository"
           } else {
-              Write-Host "⚠️ No previous state found (this is normal for first run)"
-          }
-
-      # === RESTORE STATE === (DISABLED - Google Drive)
-      # Note: Google Drive tidak bisa digunakan karena Service Account tidak punya storage quota
-      - name: Restore Tailscale state (DISABLED - Google Drive)
-        if: false
-        shell: pwsh
-        run: |
-          Write-Host "=== Restoring Tailscale state from Google Drive ==="
-
-          # === Setup Paths ===
-          $credPath = "$env:TEMP\service-account.json"
-          $confPath = "$env:TEMP\rclone.conf"
-          $localDir = "C:\ProgramData\Tailscale"
-          $stateFile = "server-state.conf"
-          $driveFolderId = "1pa6J-zMHmhkFExunAcXWitHW1SU976Wo"
-
-          # === Write service account credential from secret ===
-          $json = '${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}'
-          
-          # Simply validate and write the JSON
-          try {
-              # Validate it can be parsed
-              $jsonObj = $json | ConvertFrom-Json
-              Write-Host "JSON validation: ✅"
-              Write-Host "   Client Email: $($jsonObj.client_email)"
-              Write-Host "   Project ID: $($jsonObj.project_id)"
-              
-              # Write JSON directly as-is (format is already correct from ConvertTo-Json -Compress)
-              Set-Content -Path $credPath -Value $json -Encoding UTF8 -NoNewline
-              Write-Host "✅ JSON written to: $credPath"
-          } catch {
-              Write-Host "❌ Error: Invalid JSON in secret"
-              Write-Host "Error: $_"
-              Write-Host "First 200 chars: $($json.Substring(0, [Math]::Min(200, $json.Length)))"
-              exit 1
-          }
-
-          # === Prepare local dir ===
-          New-Item -ItemType Directory -Path $localDir -Force | Out-Null
-
-          # === Install rclone ===
-          Write-Host "Downloading and installing rclone..."
-          Invoke-WebRequest -Uri "https://downloads.rclone.org/rclone-current-windows-amd64.zip" -OutFile "rclone.zip"
-          Expand-Archive rclone.zip -DestinationPath . -Force
-          Move-Item .\rclone-*\rclone.exe . -Force
-          $env:PATH += ";$pwd"
-
-          # === Create rclone config ===
-          $confContent = @"
-          [drive]
-          type = drive
-          scope = drive
-          service_account_file = $credPath
-          "@
-          $confContent | Out-File -FilePath $confPath -Encoding utf8
-
-          # === Try to restore from Drive ===
-          Write-Host "Attempting to restore state from Google Drive folder ID: $driveFolderId"
-          try {
-              & .\rclone.exe copy drive:$stateFile $localDir --config=$confPath --drive-root-folder-id=$driveFolderId --no-traverse --ignore-errors
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "⚠️ rclone exited with code $LASTEXITCODE — probably first run. Continuing..."
-                  $LASTEXITCODE = 0
-              }
-          } catch {
-              Write-Host "⚠️ Exception caught while restoring (likely first run). Continuing..."
-          }
-
-          if (Test-Path "$localDir\$stateFile") {
-              Write-Host "✅ Restored previous Tailscale state: $localDir\$stateFile"
-          } else {
-              Write-Host "⚠️ No previous state found — starting fresh (this is normal on first run)."
+              Write-Host "No previous state found (this is normal for first run)"
           }
 
       - name: Configure Core RDP Settings
@@ -130,33 +121,30 @@ jobs:
           # (Optional) Restart the Remote Desktop service to ensure changes take effect
           Restart-Service -Name TermService -Force
 
-      - name: Create RDP User with Secure Password
+      - name: Create / Update RDP User (Password from Secret)
+        shell: pwsh
         run: |
-          Add-Type -AssemblyName System.Security
-          $charSet = @{
-              Upper   = [char[]](65..90)      # A-Z
-              Lower   = [char[]](97..122)     # a-z
-              Number  = [char[]](48..57)      # 0-9
-              Special = ([char[]](33..47) + [char[]](58..64) +
-                         [char[]](91..96) + [char[]](123..126)) # Special characters
+          $username = "RDP"
+          $password = "${{ secrets.RDP_PASSWORD }}"
+
+          if ([string]::IsNullOrWhiteSpace($password)) {
+            Write-Error "RDP_PASSWORD secret is not set or empty"
+            exit 1
           }
-          $rawPassword = @()
-          $rawPassword += $charSet.Upper | Get-Random -Count 4
-          $rawPassword += $charSet.Lower | Get-Random -Count 4
-          $rawPassword += $charSet.Number | Get-Random -Count 4
-          $rawPassword += $charSet.Special | Get-Random -Count 4
-          $password = -join ($rawPassword | Sort-Object { Get-Random })
+
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
-          
-          echo "RDP_CREDS=User: RDP | Password: $password" >> $env:GITHUB_ENV
-          
-          if (-not (Get-LocalUser -Name "RDP")) {
-              Write-Error "User creation failed"
-              exit 1
+
+          if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
+              Write-Host "User $username already exists, updating password"
+              Set-LocalUser -Name $username -Password $securePass
+          } else {
+              Write-Host "Creating user $username"
+              New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
+              Add-LocalGroupMember -Group "Administrators" -Member $username
+              Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
           }
+
+          echo "RDP_USER=$username" >> $env:GITHUB_ENV
 
       - name: Install Tailscale
         run: |
@@ -199,20 +187,60 @@ jobs:
           }
           Write-Host "TCP connectivity successful!"
 
+      - name: Convert FL Studio registry file to UTF-16
+        shell: pwsh
+        run: |
+          $src = "C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS\FLSTUDIO2516\FLSTUDIO2516\Image-Line FL Studio Producer Edition 25.1.6.4997 (x64) All Plugins Edition Multilingual\FL Studio 25.1.reg"
+          $dst = "C:\FLStudio_fixed.reg"
+
+          if (!(Test-Path $src)) {
+              Write-Error "REG file not found"
+              exit 1
+          }
+
+          Get-Content $src | Set-Content -Encoding Unicode $dst
+
+      - name: Create registry import script for first RDP login
+        shell: pwsh
+        run: |
+          $scriptPath = "C:\import_fl_reg.ps1"
+
+          $content = @(
+            'reg import "C:\FLStudio_fixed.reg"'
+          )
+
+          $content | Out-File -Encoding ASCII $scriptPath
+
+      - name: Register RunOnce task for FL Studio registry
+        shell: pwsh
+        run: |
+          schtasks /create /tn "FLStudioRegImport" `
+            /tr "powershell.exe -ExecutionPolicy Bypass -File C:\import_fl_reg.ps1" `
+            /sc ONLOGON `
+            /ru RDP `
+            /f
+
       - name: Maintain Connection
         run: |
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "http://www.youtube.com/@TipsUNIX"
           Write-Host "Address: $env:TAILSCALE_IP"
           Write-Host "Username: RDP"
-          Write-Host "Password: $(echo $env:RDP_CREDS)"
+          Write-Host "Password: (stored securely in secret)"
           Write-Host "==================`n"
           
-          # Keep runner active indefinitely (or until manually cancelled)
-          while ($true) {
-              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
+          # Keep runner active for a limited time (e.g., 5.5 hours) before auto-restarting
+          $startTime = Get-Date
+          $durationMinutes = 330
+          Write-Host "Target duration: $durationMinutes minutes"
+          
+          while ((Get-Date) -lt $startTime.AddMinutes($durationMinutes)) {
+              $elapsed = (Get-Date) - $startTime
+              $remaining = $startTime.AddMinutes($durationMinutes) - (Get-Date)
+              Write-Host "[$(Get-Date)] RDP Active - Elapsed: $([Math]::Round($elapsed.TotalMinutes)) min | Remaining: $([Math]::Round($remaining.TotalMinutes)) min"
               Start-Sleep -Seconds 300
           }
+          Write-Host "Reaching time limit. Preparing to restart..."
 
       # === SAVE STATE TO REPOSITORY ===
       - name: Save Tailscale state to repository
@@ -226,9 +254,9 @@ jobs:
               # Copy state file
               Copy-Item "C:\ProgramData\Tailscale\server-state.conf" -Destination ".github\state\server-state.conf" -Force
               
-              Write-Host "✅ State file copied to repository"
+              Write-Host "State file copied to repository"
           } else {
-              Write-Host "⚠️ No state file to save"
+              Write-Host "No state file to save"
           }
       
       - name: Commit and push state
@@ -248,54 +276,21 @@ jobs:
           if ($status) {
               git commit -m "Save Tailscale state [skip ci]"
               git push
-              Write-Host "✅ State committed to repository"
+              Write-Host "State committed to repository"
           } else {
-              Write-Host "ℹ️ No changes to commit"
+              Write-Host "No changes to commit"
           }
 
-      # === SAVE STATE === (DISABLED - Service Account tidak punya storage quota)
-      - name: Save Tailscale state to Google Drive (DISABLED)
-        if: false
+      - name: Trigger next workflow run
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          Write-Host "=== Uploading Tailscale state to Google Drive ==="
-
-          $credPath = "$env:TEMP\service-account.json"
-          $confPath = "$env:TEMP\rclone.conf"
-          $localDir = "C:\ProgramData\Tailscale"
-          $stateFile = "server-state.conf"
-          $driveFolderId = "1pa6J-zMHmhkFExunAcXWitHW1SU976Wo"
-
-          # === Write creds again ===
-          $json = '${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}'
-          
-          # Write JSON directly - it's already in correct format
-          Set-Content -Path $credPath -Value $json -Encoding UTF8 -NoNewline
-
-          # === Create rclone config ===
-          $confContent = @"
-          [drive]
-          type = drive
-          scope = drive
-          service_account_file = $credPath
-          "@
-          $confContent | Out-File -FilePath $confPath -Encoding utf8
-
-          # === Upload state file ===
-          if (Test-Path "$localDir\$stateFile") {
-              Write-Host "Uploading $stateFile to Google Drive folder ID: $driveFolderId ..."
-              try {
-                  & .\rclone.exe copy "$localDir\$stateFile" drive: --config=$confPath --drive-root-folder-id=$driveFolderId --ignore-errors --no-traverse
-                  if ($LASTEXITCODE -eq 0) {
-                      Write-Host "✅ State uploaded successfully."
-                  } else {
-                      Write-Host "⚠️ Upload exited with code $LASTEXITCODE (ignored)."
-                      $LASTEXITCODE = 0
-                  }
-              } catch {
-                  Write-Host "⚠️ Exception while uploading state — continuing anyway."
-              }
+          Write-Host "Triggering next workflow: ${{ github.workflow }} on branch: ${{ github.ref_name }}"
+          gh workflow run "${{ github.workflow }}" --ref ${{ github.ref_name }}
+          if ($LASTEXITCODE -eq 0) {
+              Write-Host "Next workflow triggered successfully"
           } else {
-              Write-Host "⚠️ No local state file found to upload."
+              Write-Host "Failed to trigger next workflow"
           }
-
