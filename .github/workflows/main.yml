@@ -21,69 +21,6 @@ jobs:
           persist-credentials: true
           fetch-depth: 0  # Fetch all history to get previous state
 
-      - name: Install dependencies
-        run: pip install gdown
-
-      - name: Download FL Studio from Google Drive
-        shell: pwsh
-        run: |
-          $desktop = "C:\Users\runneradmin\Desktop"
-          cd $desktop
-          gdown --folder https://drive.google.com/drive/folders/1LCHyrdi91wQUGBGvgu1YPdDSLM4OPXEO
-
-      - name: Extract FL Studio ZIP
-        shell: pwsh
-        run: |
-          $base = "C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS"
-          $zip  = "$base\FLSTUDIO2516.zip"
-          $dest = "$base\FLSTUDIO2516"
-
-          if (!(Test-Path $dest)) {
-              New-Item -ItemType Directory -Path $dest | Out-Null
-          }
-
-          Expand-Archive -Path $zip -DestinationPath $dest -Force
-
-      - name: Run FL Studio Installer
-        shell: pwsh
-        run: |
-          $installer = "C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS\FLSTUDIO2516\FLSTUDIO2516\Image-Line FL Studio Producer Edition 25.1.6.4997 (x64) All Plugins Edition Multilingual\flstudio_25.1.6.4997.exe"
-
-          Start-Process -FilePath $installer
-
-      - name: Run install_flstudio.py
-        shell: pwsh
-        run: |
-          cd C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS
-          java -jar sikulixapi.jar -r install_flstudio.py
-
-      - name: Replace FL Studio files (Admin)
-        shell: pwsh
-        run: |
-          $source = "C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS\FLSTUDIO2516\FLSTUDIO2516\Image-Line FL Studio Producer Edition 25.1.6.4997 (x64) All Plugins Edition Multilingual\FL_Studio_25.1.6.4997-WD"
-          $dest   = "C:\Program Files\Image-Line\FL Studio 2025"
-
-          if (!(Test-Path $source)) {
-              Write-Error "Source folder not found!"
-              exit 1
-          }
-
-          if (!(Test-Path $dest)) {
-              Write-Error "Destination folder not found!"
-              exit 1
-          }
-
-          Write-Host "Replacing files from:"
-          Write-Host $source
-          Write-Host "to:"
-          Write-Host $dest
-
-          Copy-Item -Path "$source\*" `
-                    -Destination $dest `
-                    -Recurse `
-                    -Force `
-                    -ErrorAction Stop
-
       # === RESTORE STATE FROM REPOSITORY ===
       - name: Prepare Tailscale directory
         shell: pwsh
@@ -186,39 +123,6 @@ jobs:
               exit 1
           }
           Write-Host "TCP connectivity successful!"
-
-      - name: Convert FL Studio registry file to UTF-16
-        shell: pwsh
-        run: |
-          $src = "C:\Users\runneradmin\Desktop\AUTOMATION_ON_VPS\FLSTUDIO2516\FLSTUDIO2516\Image-Line FL Studio Producer Edition 25.1.6.4997 (x64) All Plugins Edition Multilingual\FL Studio 25.1.reg"
-          $dst = "C:\FLStudio_fixed.reg"
-
-          if (!(Test-Path $src)) {
-              Write-Error "REG file not found"
-              exit 1
-          }
-
-          Get-Content $src | Set-Content -Encoding Unicode $dst
-
-      - name: Create registry import script for first RDP login
-        shell: pwsh
-        run: |
-          $scriptPath = "C:\import_fl_reg.ps1"
-
-          $content = @(
-            'reg import "C:\FLStudio_fixed.reg"'
-          )
-
-          $content | Out-File -Encoding ASCII $scriptPath
-
-      - name: Register RunOnce task for FL Studio registry
-        shell: pwsh
-        run: |
-          schtasks /create /tn "FLStudioRegImport" `
-            /tr "powershell.exe -ExecutionPolicy Bypass -File C:\import_fl_reg.ps1" `
-            /sc ONLOGON `
-            /ru RDP `
-            /f
 
       - name: Maintain Connection
         run: |
