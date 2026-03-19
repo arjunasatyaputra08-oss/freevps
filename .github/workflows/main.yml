@@ -3,7 +3,6 @@ name: RDP_TIPSUNIX with State Persistence
 on:
   workflow_dispatch:
 
-# Grant write permissions to workflow
 permissions:
   contents: write
   actions: write
@@ -19,7 +18,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           persist-credentials: true
-          fetch-depth: 0  # Fetch all history to get previous state
+          fetch-depth: 0
 
       # === RESTORE STATE FROM REPOSITORY ===
       - name: Prepare Tailscale directory
@@ -35,54 +34,63 @@ jobs:
               Copy-Item ".github\state\server-state.conf" -Destination "C:\ProgramData\Tailscale\server-state.conf"
               Write-Host "Tailscale state restored from repository"
           } else {
-              Write-Host "No previous state found (this is normal for first run)"
+              Write-Host "No previous state found"
           }
 
+      # === RDP CONFIG ===
       - name: Configure Core RDP Settings
         run: |
-          # Enable Remote Desktop and disable Network Level Authentication (if needed)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
                              -Name "fDenyTSConnections" -Value 0 -Force
+
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
                              -Name "UserAuthentication" -Value 0 -Force
+
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
                              -Name "SecurityLayer" -Value 0 -Force
 
-          # Remove any existing rule with the same name to avoid duplication
           netsh advfirewall firewall delete rule name="RDP-Tailscale"
-          
-          # For testing, allow any incoming connection on port 3389
+
           netsh advfirewall firewall add rule name="RDP-Tailscale" `
             dir=in action=allow protocol=TCP localport=3389
 
-          # (Optional) Restart the Remote Desktop service to ensure changes take effect
           Restart-Service -Name TermService -Force
 
-      - name: Create / Update RDP User (Password from Secret)
+      # === CREATE USER SOME_ONE ===
+      - name: Create / Update RDP User (SOME_ONE)
         shell: pwsh
         run: |
-          $username = "RDP"
+          $username = "SOME_ONE"
           $password = "${{ secrets.RDP_PASSWORD }}"
 
           if ([string]::IsNullOrWhiteSpace($password)) {
-            Write-Error "RDP_PASSWORD secret is not set or empty"
+            Write-Error "RDP_PASSWORD secret is empty"
             exit 1
           }
 
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
 
           if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
-              Write-Host "User $username already exists, updating password"
+              Write-Host "User exists, updating password"
               Set-LocalUser -Name $username -Password $securePass
           } else {
-              Write-Host "Creating user $username"
+              Write-Host "Creating user SOME_ONE"
               New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
+              
               Add-LocalGroupMember -Group "Administrators" -Member $username
               Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
           }
 
+          # Ensure profile directory exists
+          $userPath = "C:\Users\$username"
+          if (!(Test-Path $userPath)) {
+              Write-Host "Creating user folder $userPath"
+              New-Item -ItemType Directory -Path $userPath -Force | Out-Null
+          }
+
           echo "RDP_USER=$username" >> $env:GITHUB_ENV
 
+      # === INSTALL TAILSCALE ===
       - name: Install Tailscale
         run: |
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
@@ -92,14 +100,16 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
           Remove-Item $installerPath -Force
 
+      # === CONNECT TAILSCALE ===
       - name: Establish Tailscale Connection
         run: |
-          # Bring up Tailscale with the provided auth key and set a unique hostname
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} `
+            --hostname=gh-runner-$env:GITHUB_RUN_ID
           
-          # Wait for Tailscale to assign an IP
           $tsIP = $null
           $retries = 0
+
           while (-not $tsIP -and $retries -lt 10) {
               $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
               Start-Sleep -Seconds 5
@@ -107,94 +117,74 @@ jobs:
           }
           
           if (-not $tsIP) {
-              Write-Error "Tailscale IP not assigned. Exiting."
+              Write-Error "No Tailscale IP"
               exit 1
           }
+
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-      
+
+      # === VERIFY RDP ===
       - name: Verify RDP Accessibility
         run: |
-          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
+          Write-Host "IP: $env:TAILSCALE_IP"
           
-          # Test connectivity using Test-NetConnection against the Tailscale IP on port 3389
           $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
+
           if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "TCP connection to RDP port 3389 failed"
+              Write-Error "RDP failed"
               exit 1
           }
-          Write-Host "TCP connectivity successful!"
 
+          Write-Host "RDP OK"
+
+      # === KEEP SESSION ===
       - name: Maintain Connection
         run: |
           Write-Host "`n=== RDP ACCESS ==="
-          Write-Host "http://www.youtube.com/@TipsUNIX"
-          Write-Host "Address: $env:TAILSCALE_IP"
-          Write-Host "Username: RDP"
-          Write-Host "Password: (stored securely in secret)"
+          Write-Host "Address : $env:TAILSCALE_IP"
+          Write-Host "Username: SOME_ONE"
+          Write-Host "Password: (secret)"
           Write-Host "==================`n"
           
-          # Keep runner active for a limited time (e.g., 5.5 hours) before auto-restarting
           $startTime = Get-Date
           $durationMinutes = 330
-          Write-Host "Target duration: $durationMinutes minutes"
-          
-          while ((Get-Date) -lt $startTime.AddMinutes($durationMinutes)) {
-              $elapsed = (Get-Date) - $startTime
-              $remaining = $startTime.AddMinutes($durationMinutes) - (Get-Date)
-              Write-Host "[$(Get-Date)] RDP Active - Elapsed: $([Math]::Round($elapsed.TotalMinutes)) min | Remaining: $([Math]::Round($remaining.TotalMinutes)) min"
-              Start-Sleep -Seconds 300
-          }
-          Write-Host "Reaching time limit. Preparing to restart..."
 
-      # === SAVE STATE TO REPOSITORY ===
-      - name: Save Tailscale state to repository
+          while ((Get-Date) -lt $startTime.AddMinutes($durationMinutes)) {
+              Start-Sleep -Seconds 300
+              Write-Host "RDP still alive..."
+          }
+
+      # === SAVE STATE ===
+      - name: Save Tailscale state
         if: always()
         shell: pwsh
         run: |
           if (Test-Path "C:\ProgramData\Tailscale\server-state.conf") {
-              # Prepare state directory
               New-Item -ItemType Directory -Path ".github\state" -Force | Out-Null
-              
-              # Copy state file
-              Copy-Item "C:\ProgramData\Tailscale\server-state.conf" -Destination ".github\state\server-state.conf" -Force
-              
-              Write-Host "State file copied to repository"
-          } else {
-              Write-Host "No state file to save"
+              Copy-Item "C:\ProgramData\Tailscale\server-state.conf" ".github\state\server-state.conf" -Force
           }
-      
-      - name: Commit and push state
+
+      - name: Commit state
         if: always()
         shell: pwsh
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-          
-          # Pull latest changes first to avoid conflicts
+
           git pull origin main --no-edit || true
-          
           git add .github/state/
-          
-          # Check if there are changes to commit
+
           $status = git status --porcelain .github/state/
           if ($status) {
-              git commit -m "Save Tailscale state [skip ci]"
+              git commit -m "Save state"
               git push
-              Write-Host "State committed to repository"
-          } else {
-              Write-Host "No changes to commit"
           }
 
-      - name: Trigger next workflow run
+      # === AUTO RE-RUN ===
+      - name: Trigger next run
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          Write-Host "Triggering next workflow: ${{ github.workflow }} on branch: ${{ github.ref_name }}"
           gh workflow run "${{ github.workflow }}" --ref ${{ github.ref_name }}
-          if ($LASTEXITCODE -eq 0) {
-              Write-Host "Next workflow triggered successfully"
-          } else {
-              Write-Host "Failed to trigger next workflow"
-          }
