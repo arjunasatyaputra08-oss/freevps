@@ -61,16 +61,16 @@ jobs:
       - name: Create / Update RDP User (Password from Secret)
         shell: pwsh
         run: |
-          $username = "SOME_ONE"
+          $username = "RDP"
           $password = "${{ secrets.RDP_PASSWORD }}"
-      
+
           if ([string]::IsNullOrWhiteSpace($password)) {
             Write-Error "RDP_PASSWORD secret is not set or empty"
             exit 1
           }
-      
+
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-      
+
           if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
               Write-Host "User $username already exists, updating password"
               Set-LocalUser -Name $username -Password $securePass
@@ -80,9 +80,9 @@ jobs:
               Add-LocalGroupMember -Group "Administrators" -Member $username
               Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
           }
-      
+
           echo "RDP_USER=$username" >> $env:GITHUB_ENV
-          
+
       - name: Install Tailscale
         run: |
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
@@ -124,12 +124,61 @@ jobs:
           }
           Write-Host "TCP connectivity successful!"
 
+      - name: Setup Environment and Download WebPilot
+        shell: pwsh
+        run: |
+          pip install gdown
+          
+          # Setup WebPilot Project
+          Write-Host "Downloading WebPilot Project..."
+          New-Item -ItemType Directory -Path "C:\ProjectTemp" -Force | Out-Null
+          Set-Location -Path "C:\ProjectTemp"
+          gdown --folder "https://drive.google.com/drive/folders/1SsBJmNB7AG7YnkZusLmdRep97vgD-lUO"
+          $projectFolder = Get-ChildItem -Directory | Select-Object -First 1
+          if ($projectFolder) {
+              New-Item -ItemType Directory -Path "C:\Users\runneradmin\webpilot" -Force | Out-Null
+              Copy-Item -Path "$($projectFolder.FullName)\*" -Destination "C:\Users\runneradmin\webpilot" -Recurse -Force
+          } else {
+              Write-Warning "Failed to download project folder. Please check the URL or Google Drive limits."
+          }
+          
+          # Setup WebPilot Session
+          Write-Host "Downloading WebPilot Session (.webpilot)..."
+          New-Item -ItemType Directory -Path "C:\SessionTemp" -Force | Out-Null
+          Set-Location -Path "C:\SessionTemp"
+          gdown --folder "https://drive.google.com/drive/folders/18ztH3JARxXR7B-VjRz8DHNcguKk-23c3"
+          $sessionFolder = Get-ChildItem -Directory | Select-Object -First 1
+          if ($sessionFolder) {
+              New-Item -ItemType Directory -Path "C:\Users\runneradmin\.webpilot" -Force | Out-Null
+              Copy-Item -Path "$($sessionFolder.FullName)\*" -Destination "C:\Users\runneradmin\.webpilot" -Recurse -Force
+          } else {
+              Write-Warning "Failed to download session folder. Please check the URL."
+          }
+
+          # Install Dependencies
+          Set-Location -Path "C:\Users\runneradmin\webpilot"
+          if (Test-Path requirements.txt) {
+              pip install -r requirements.txt
+              playwright install chromium
+          } else {
+              Write-Warning "requirements.txt not found."
+          }
+          
+      - name: Run YouTube Studio Monitor
+        shell: pwsh
+        working-directory: C:\Users\runneradmin\webpilot
+        run: |
+          Write-Host "Starting YouTube Studio Monitor in background..."
+          # Start the python script in background and redirect output to log files
+          Start-Process python -ArgumentList "webpilot.py --session youtube run scripts/yt_studio_monitor.py" -NoNewWindow -RedirectStandardOutput yt_monitor.log -RedirectStandardError yt_monitor_error.log
+          Write-Host "YouTube Studio Monitor is running. Logs are saved to yt_monitor.log"
+
       - name: Maintain Connection
         run: |
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "http://www.youtube.com/@TipsUNIX"
           Write-Host "Address: $env:TAILSCALE_IP"
-          Write-Host "Username: SOME_ONE"
+          Write-Host "Username: RDP"
           Write-Host "Password: (stored securely in secret)"
           Write-Host "==================`n"
           
