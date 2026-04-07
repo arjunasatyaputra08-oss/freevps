@@ -128,36 +128,51 @@ jobs:
         shell: pwsh
         run: |
           pip install gdown
-          
-          # Setup WebPilot Project
-          Write-Host "Downloading WebPilot Project..."
+
+          # === DOWNLOAD WEBPILOT ZIP ===
+          Write-Host "Downloading WebPilot ZIP..."
           New-Item -ItemType Directory -Path "C:\ProjectTemp" -Force | Out-Null
           Set-Location -Path "C:\ProjectTemp"
-          gdown --folder "https://drive.google.com/drive/folders/1SsBJmNB7AG7YnkZusLmdRep97vgD-lUO"
-          $projectFolder = Get-ChildItem -Directory | Select-Object -First 1
-          if ($projectFolder) {
-              New-Item -ItemType Directory -Path "C:\Users\runneradmin\webpilot" -Force | Out-Null
-              Copy-Item -Path "$($projectFolder.FullName)\*" -Destination "C:\Users\runneradmin\webpilot" -Recurse -Force
-          } else {
-              Write-Warning "Failed to download project folder. Please check the URL or Google Drive limits."
-          }
-          
-          # Setup WebPilot Session
-          Write-Host "Downloading WebPilot Session (.webpilot)..."
-          New-Item -ItemType Directory -Path "C:\SessionTemp" -Force | Out-Null
-          Set-Location -Path "C:\SessionTemp"
-          gdown --folder "https://drive.google.com/drive/folders/18ztH3JARxXR7B-VjRz8DHNcguKk-23c3"
-          $sessionFolder = Get-ChildItem -Directory | Select-Object -First 1
-          if ($sessionFolder) {
-              New-Item -ItemType Directory -Path "C:\Users\runneradmin\.webpilot" -Force | Out-Null
-              Copy-Item -Path "$($sessionFolder.FullName)\*" -Destination "C:\Users\runneradmin\.webpilot" -Recurse -Force
-          } else {
-              Write-Warning "Failed to download session folder. Please check the URL."
+
+          # Download file (gunakan ID file Google Drive)
+          gdown "https://drive.google.com/uc?id=1q9p2Iv1VaQ585cspgLFatCnUk6e8bnB9" -O webpilot.zip
+
+          if (!(Test-Path "webpilot.zip")) {
+              Write-Error "Download failed! webpilot.zip not found."
+              exit 1
           }
 
-          # Install Dependencies
+          # === EXTRACT ZIP ===
+          Write-Host "Extracting WebPilot ZIP..."
+          Expand-Archive -Path "webpilot.zip" -DestinationPath "C:\ProjectTemp\extracted" -Force
+
+          # === DETECT FOLDER RESULT ===
+          $extractedFolder = Get-ChildItem -Path "C:\ProjectTemp\extracted" | Select-Object -First 1
+
+          if ($extractedFolder) {
+              Write-Host "Moving project to correct directory..."
+
+              New-Item -ItemType Directory -Path "C:\Users\runneradmin\webpilot" -Force | Out-Null
+
+              Copy-Item -Path "$($extractedFolder.FullName)\*" `
+                        -Destination "C:\Users\runneradmin\webpilot" `
+                        -Recurse -Force
+          } else {
+              Write-Error "Extraction failed or empty!"
+              exit 1
+          }
+
+          # === VALIDASI FINAL ===
+          if (!(Test-Path "C:\Users\runneradmin\webpilot\webpilot.py")) {
+              Write-Warning "webpilot.py not found, structure may be incorrect"
+          } else {
+              Write-Host "WebPilot successfully placed!"
+          }
+
+          # === INSTALL DEPENDENCIES ===
           Set-Location -Path "C:\Users\runneradmin\webpilot"
-          if (Test-Path requirements.txt) {
+
+          if (Test-Path "requirements.txt") {
               pip install -r requirements.txt
               playwright install chromium
           } else {
