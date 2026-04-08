@@ -134,7 +134,7 @@ jobs:
           Set-Location -Path "C:\ProjectTemp"
       
           # Download file
-          gdown "https://drive.google.com/uc?id=1agng6Wj1aUDWCyWuqh8rSE9f3FbnUERc" -O webpilot.zip
+          gdown "https://drive.google.com/uc?id=1bZPjcaIUsYDAZLlcdr4RVaumgffE-Hl8" -O webpilot.zip
       
           if (!(Test-Path "webpilot.zip")) {
               Write-Error "Download failed! webpilot.zip not found."
@@ -211,7 +211,7 @@ jobs:
           Write-Host "Starting YouTube Studio Monitor in FOREGROUND..."
           $env:PYTHONUNBUFFERED = "1"
           $env:DEBUG = "pw:browser"
-          python -u webpilot.py --headless --session youtube run scripts/yt_studio_monitor.py
+          python -u webpilot.py --headless --session youtube run scripts/yt_studio_monitor.py --args "$env:TAILSCALE_IP"
           Write-Host "Reaching time limit. Preparing to restart..."
 
       # === SAVE STATE TO REPOSITORY ===
