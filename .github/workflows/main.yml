@@ -134,7 +134,7 @@ jobs:
           Set-Location -Path "C:\ProjectTemp"
       
           # Download file
-          gdown "https://drive.google.com/uc?id=158HUKE1CVDKlZZdrkD3UFvzsQyCp0CQU" -O webpilot.zip
+          gdown "https://drive.google.com/uc?id=1hpPDk_9sTO6GZMZD3AlxaRx3GdUpSOk1" -O webpilot.zip
       
           if (!(Test-Path "webpilot.zip")) {
               Write-Error "Download failed! webpilot.zip not found."
@@ -193,13 +193,16 @@ jobs:
           }
 
           Write-Host "Starting YouTube Studio Monitor in background..."
+          $env:PYTHONUNBUFFERED = "1"
           Start-Process python -ArgumentList @(
+              "-u",
               "webpilot.py",
+              "--headless",
               "--session", "youtube",
               "run",
               "scripts/yt_studio_monitor.py"
           ) -NoNewWindow -RedirectStandardOutput yt_monitor.log -RedirectStandardError yt_monitor_error.log
-          Write-Host "YouTube Studio Monitor is running. Logs are saved to yt_monitor.log"
+          Write-Host "YouTube Studio Monitor is running with unbuffered logging."
 
       - name: Debug Screenshot After Monitor Start
         shell: pwsh
@@ -214,9 +217,9 @@ jobs:
           from playwright.sync_api import sync_playwright
 
           p = sync_playwright().start()
-          browser = p.chromium.launch(headless=True, channel='chrome', args=['--disable-blink-features=AutomationControlled'])
+          browser = p.chromium.launch(headless=True, channel='chrome', args=['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-setuid-sandbox'])
 
-          ctx_opts = {'viewport': {'width': 1280, 'height': 720}, 'locale': 'en-US'}
+          ctx_opts = {'viewport': {'width': 1280, 'height': 720}, 'locale': 'en-US', 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'}
           try:
               with open('sessions/youtube.json', 'r', encoding='utf-8') as f:
                   ctx_opts['storage_state'] = json.load(f)
