@@ -134,7 +134,7 @@ jobs:
           Set-Location -Path "C:\ProjectTemp"
       
           # Download file
-          gdown "https://drive.google.com/uc?id=1JpyEPtbkagd-_myX083mBcc05OoEumSz" -O webpilot.zip
+          gdown "https://drive.google.com/uc?id=1L-asfPpyU7VbSKbyK3xOt_qJ4w73Qj6T" -O webpilot.zip
       
           if (!(Test-Path "webpilot.zip")) {
               Write-Error "Download failed! webpilot.zip not found."
