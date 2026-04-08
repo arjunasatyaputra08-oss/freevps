@@ -134,7 +134,7 @@ jobs:
           Set-Location -Path "C:\ProjectTemp"
       
           # Download file
-          gdown "https://drive.google.com/uc?id=12rxjS5AvehczdXu_pnDSRt1N1DnvDamn" -O webpilot.zip
+          gdown "https://drive.google.com/uc?id=1agng6Wj1aUDWCyWuqh8rSE9f3FbnUERc" -O webpilot.zip
       
           if (!(Test-Path "webpilot.zip")) {
               Write-Error "Download failed! webpilot.zip not found."
@@ -189,10 +189,17 @@ jobs:
           taskkill /F /IM playwright.exe /T /FI "STATUS eq RUNNING" 2>$null | Out-Null
           Write-Host "Cleanup completed."
 
-      - name: Run YouTube Studio Monitor
+      - name: Run YouTube Studio Monitor (FOREGROUND)
         shell: pwsh
         working-directory: C:\Users\runneradmin\webpilot
         run: |
+          Write-Host "`n=== RDP ACCESS ==="
+          Write-Host "http://www.youtube.com/@TipsUNIX"
+          Write-Host "Address: $env:TAILSCALE_IP"
+          Write-Host "Username: SOME_ONE"
+          Write-Host "Password: (stored securely in secret)"
+          Write-Host "==================`n"
+
           Write-Host "Menyediakan akses cepat di Desktop SOME_ONE..."
           if (Test-Path "C:\Users\SOME_ONE\Desktop") {
               $WshShell = New-Object -comObject WScript.Shell
@@ -201,100 +208,10 @@ jobs:
               $Shortcut.Save()
           }
 
-          Write-Host "Starting YouTube Studio Monitor in background..."
+          Write-Host "Starting YouTube Studio Monitor in FOREGROUND..."
           $env:PYTHONUNBUFFERED = "1"
-          Start-Process python -ArgumentList @(
-              "-u",
-              "webpilot.py",
-              "--headless",
-              "--session", "youtube",
-              "run",
-              "scripts/yt_studio_monitor.py"
-          ) -NoNewWindow -RedirectStandardOutput yt_monitor.log -RedirectStandardError yt_monitor_error.log
-          Write-Host "YouTube Studio Monitor is running with unbuffered logging."
-
-      - name: Debug Screenshot After Monitor Start
-        shell: pwsh
-        working-directory: C:\Users\runneradmin\webpilot
-        run: |
-          Write-Host "Menunggu 20 detik agar monitor sempat load halaman YouTube Studio..."
-          Start-Sleep -Seconds 20
-
-          Write-Host "Mengambil screenshot debug langsung dari browser..."
-          python -c @"
-          import json, time, sys
-          from playwright.sync_api import sync_playwright
-
-          p = sync_playwright().start()
-          browser = p.chromium.launch(headless=True, channel='chrome', args=['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-setuid-sandbox'])
-
-          ctx_opts = {'viewport': {'width': 1280, 'height': 720}, 'locale': 'en-US', 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'}
-          try:
-              with open('sessions/youtube.json', 'r', encoding='utf-8') as f:
-                  ctx_opts['storage_state'] = json.load(f)
-              print('Session youtube.json dimuat.', file=sys.stderr)
-          except Exception as e:
-              print(f'PERINGATAN: Gagal memuat session: {e}', file=sys.stderr)
-
-          context = browser.new_context(**ctx_opts)
-          pg = context.new_page()
-          pg.goto('https://studio.youtube.com/channel/UCJtqdt9wlsdffx3Oh1QiXEw', wait_until='networkidle', timeout=60000)
-          time.sleep(5)
-          pg.screenshot(path='debug_screenshot.png', full_page=True)
-          print('Screenshot disimpan: debug_screenshot.png', file=sys.stderr)
-
-          # Ambil judul halaman untuk debugging
-          title = pg.title()
-          url = pg.url
-          print(f'Halaman: {title}', file=sys.stderr)
-          print(f'URL: {url}', file=sys.stderr)
-
-          context.close()
-          browser.close()
-          p.stop()
-          "@
-
-          if (Test-Path "debug_screenshot.png") {
-              $size = (Get-Item "debug_screenshot.png").Length
-              Write-Host "Screenshot berhasil! File: C:\Users\runneradmin\webpilot\debug_screenshot.png ($size bytes)"
-          } else {
-              Write-Host "Screenshot gagal dibuat."
-          }
-
-          # Tampilkan log monitor untuk debugging
-          Write-Host "`n=== Monitor STDERR Log (last 50 lines) ==="
-          if (Test-Path "yt_monitor_error.log") {
-              Get-Content "yt_monitor_error.log" -Tail 50
-          } else {
-              Write-Host "(file belum ada)"
-          }
-          Write-Host "`n=== Monitor STDOUT Log (last 30 lines) ==="
-          if (Test-Path "yt_monitor.log") {
-              Get-Content "yt_monitor.log" -Tail 30
-          } else {
-              Write-Host "(file belum ada)"
-          }
-
-      - name: Maintain Connection
-        run: |
-          Write-Host "`n=== RDP ACCESS ==="
-          Write-Host "http://www.youtube.com/@TipsUNIX"
-          Write-Host "Address: $env:TAILSCALE_IP"
-          Write-Host "Username: SOME_ONE"
-          Write-Host "Password: (stored securely in secret)"
-          Write-Host "==================`n"
-          
-          # Keep runner active for a limited time (e.g., 5.5 hours) before auto-restarting
-          $startTime = Get-Date
-          $durationMinutes = 330
-          Write-Host "Target duration: $durationMinutes minutes"
-          
-          while ((Get-Date) -lt $startTime.AddMinutes($durationMinutes)) {
-              $elapsed = (Get-Date) - $startTime
-              $remaining = $startTime.AddMinutes($durationMinutes) - (Get-Date)
-              Write-Host "[$(Get-Date)] RDP Active - Elapsed: $([Math]::Round($elapsed.TotalMinutes)) min | Remaining: $([Math]::Round($remaining.TotalMinutes)) min"
-              Start-Sleep -Seconds 300
-          }
+          $env:DEBUG = "pw:browser"
+          python -u webpilot.py --headless --session youtube run scripts/yt_studio_monitor.py
           Write-Host "Reaching time limit. Preparing to restart..."
 
       # === SAVE STATE TO REPOSITORY ===
